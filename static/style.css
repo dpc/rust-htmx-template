@@ -1,0 +1,147 @@
+/* CSS Mini Reset */
+html, body, div, form, fieldset, legend, label {
+  margin: 0;
+  padding: 0; 
+}
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+th, td {
+  text-align: left;
+  vertical-align: top;
+}
+h1, h2, h3, h4, h5, h6, th, td, caption { font-weight: normal; }
+img { border: 0; }
+
+
+/* OWN */
+
+:root {
+  /* https://coolors.co/780000-fdf0d5-003049-c1121f */
+  --primary-bright-color: #FDF0D5;
+  --primary-blue-color: #003049;
+  --dark-red-color: #780000;
+}
+
+/* border-box everything, it's just so much better */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+html {
+  background-color: #f0f0f0;
+}
+
+h1, h2, h3, h4 { 
+  margin: 0.5em 0em;
+}
+
+span.dpc {
+  font-family: Dejavu Sans Mono, monotype;
+}
+
+span.subtitle {
+  font-size: 0.8em;
+  font-weight: normal;
+}
+
+body {
+  font-family: Dejavu Sans, Arial, Verdana, sans-serif;
+  color: rgb(17, 17, 17);
+
+  background-color: #ffffff;
+
+  margin: auto;
+  min-height: 100vh;
+  min-width: 100vw;
+}
+
+/* sticky footer: start */
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+section.content {
+    flex: 1 0 auto;
+}
+
+footer {
+    flex-shrink: 0;
+}
+/* sticky footer: end */
+
+section, header, footer {
+  padding: clamp(0em, 15vh, 1em);
+  padding-inline: clamp(0em, 15vw - 1em, 4em);
+}
+
+a {
+  color: var(--dark-red-color);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+header {
+  border-bottom: 1px solid #d0d0d0;
+
+  background-image: linear-gradient(#fff, #f4f5f5);
+  box-shadow: 0px 4px 15px 0px rgb(239, 239, 239);
+}
+
+header h1 {
+  text-align: center;
+}
+
+footer {
+  background-color: #f6f6f6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: bold;
+  color: var(--primary-blue-color);
+}
+
+button {
+    padding: 12px 25px;
+    background-image: linear-gradient(45deg, #6ab1d7, #33d9de);
+    color: #ffffff;
+    border: none;
+    border-radius: 5px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+button:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.12);
+}
+
+.split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-around;
+}
+
+.column {
+}
+
+.img-column {
+    max-width: 4em;
+}
+
+.text-column {
+    flex-grow: 1; 
+}
+
+.img-column img {
+    width:100%;
+}

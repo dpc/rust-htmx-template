@@ -1,0 +1,24 @@
+[package]
+name = "htmx-demo"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.release]
+debug = "line-tables-only"
+lto = "fat"
+codegen-units = 1
+
+[dependencies]
+anyhow = "1.0.75"
+astra = { git = "https://github.com/dpc/astra", rev = "e13611bad8f421999695ebc25f1528f5e3b11487" }
+hyper = "0.14.27"
+matchit = "0.7.2"
+maud = "0.25.0"
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+redb = "1.1.0"
