@@ -1,19 +1,24 @@
+mod opts;
+mod page;
+mod rate_limit;
+mod routes;
+
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::str::FromStr;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use anyhow::Context;
 use astra::{Request, Response, Service};
+use clap::Parser;
+use lettre::message::{Mailbox, MessageBuilder};
+use lettre::{Address, SmtpTransport, Transport};
 use matchit::Match;
 use rate_limit::{conventional, pre};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 type Router = matchit::Router<for<'a> fn(&Server, &'a Request, &'a matchit::Params) -> Response>;
-
-mod page;
-mod rate_limit;
-mod routes;
 
 #[derive(Default)]
 struct State {
@@ -96,9 +101,17 @@ impl Service for Server {
 fn main() -> anyhow::Result<()> {
     init_logging();
 
+    if let Ok(path) = dotenv::dotenv() {
+        info!(path = %path.display(), "Loaded env file");
+    }
+
+    let args = opts::Opts::parse();
+
+    // send_email()?;
+
     let server = Server::new()?;
 
-    astra::Server::bind("localhost:3000")
+    astra::Server::bind(args.listen)
         .serve(server)
         .context("bind http server")?;
 
@@ -114,4 +127,41 @@ fn init_logging() {
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
+}
+
+fn send_email() -> anyhow::Result<()> {
+    // Create the email
+    let email = MessageBuilder::new()
+        .to(Mailbox::new(
+            Some("dpc@dpc.pw".into()),
+            Address::from_str("dpc@dpc.pw")?,
+        ))
+        .from(Mailbox::new(
+            Some("dpc".into()),
+            Address::from_str("dciezarkiewicz@gmail.com")?,
+        ))
+        .subject("Test Email")
+        .body("Hello from Rust!".to_owned())?;
+
+    // Set up the SMTP client
+    let smtp_hostname = std::env::var("SMTP_HOSTNAME")?;
+    let smtp_port = std::env::var("SMTP_PORT")?;
+    let smtp_username = std::env::var("SMTP_USER")?;
+    let smtp_password = std::env::var("SMTP_PASSWORD")?;
+
+    let mailer = SmtpTransport::relay(&smtp_hostname)?
+        .port(FromStr::from_str(&smtp_port).context("Failed to parse port number")?)
+        .credentials(lettre::transport::smtp::authentication::Credentials::new(
+            smtp_username,
+            smtp_password,
+        ))
+        .build();
+
+    mailer
+        .test_connection()
+        .context("SMTP Connection test failed")?;
+
+    mailer.send(&email).context("Failed to send email")?;
+
+    Ok(())
 }

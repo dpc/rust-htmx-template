@@ -3,7 +3,7 @@ use maud::{html, Markup, DOCTYPE};
 
 pub fn page(title: &str, content: Markup) -> Markup {
     /// A basic header with a dynamic `page_title`.
-    pub(crate) fn header(page_title: &str) -> Markup {
+    pub(crate) fn head(page_title: &str) -> Markup {
         html! {
             (DOCTYPE)
             html lang="en";
@@ -15,15 +15,38 @@ pub fn page(title: &str, content: Markup) -> Markup {
         }
     }
 
+    pub(crate) fn header() -> Markup {
+        html! {
+            header {
+                .content.split {
+                    nav .column .text-column {
+                        a href="/" { "Home" }
+                        a href="/" { "Home2" }
+                    }
+                    .column .img-column {
+                        img src="/favicon.ico" style="image-rendering: pixelated;" alt="dpc's avatar image";
+                    }
+                 }
+            }
+        }
+    }
+
     /// A static footer.
     pub(crate) fn footer() -> Markup {
         html! {
             footer {
-                p {
-                    "Copyleft "
-                    a href="https://dpc.pw" { "dpc" }
-                    " with "
-                    a href="https://x.dpc.pw" { "unclicked link" }
+                .content.split {
+                    h3 {
+                        "Dawid Ciężarkiewicz"
+                        br;
+                        span.subtitle { "aka " span.dpc { "dpc" } }
+                    }
+                    p {
+                        "Copyleft "
+                        a href="https://dpc.pw" { "dpc" }
+                        " with "
+                        a href="https://x.dpc.pw" { "unclicked link" }
+                    }
                 }
             }
             script src="https://unpkg.com/htmx.org@1.9.4" {};
@@ -31,26 +54,13 @@ pub fn page(title: &str, content: Markup) -> Markup {
     }
 
     html! {
-        (header(title))
+        (head(title))
         body {
-                header {
-                    h1 {
-                        .split {
-                            .column .text-column {
-                                "Dawid Ciężarkiewicz"
-                                br;
-                                span.subtitle { "aka " span.dpc { "dpc" } }
-                            }
-                            .column .img-column {
-                                img src="/favicon.ico" style="image-rendering: pixelated; width: 128px;";
-                            }
-                        }
-                     }
-                }
-                section.content {
-                    (content)
-                }
-                (footer())
+            (header())
+            section.content {
+                (content)
+            }
+            (footer())
         }
     }
 }
