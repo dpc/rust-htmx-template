@@ -57,10 +57,36 @@ pub fn page(title: &str, content: Markup) -> Markup {
         (head(title))
         body {
             (header())
-            section.content {
+            main.content {
                 (content)
             }
             (footer())
+        }
+    }
+}
+
+pub(crate) fn post(id: &str, title: &str, body: &str) -> Markup {
+    html! {
+        article .post #id {
+            h2 { (title) }
+
+            p {
+                (body)
+            }
+
+            button hx-get={ "/post/"(id)"/edit" } hx-swap="outerHTML" hx-target={ "closest article" } { "Edit" }
+        }
+    }
+}
+
+pub(crate) fn post_edit_form(id: &str, title: &str, body: &str) -> Markup {
+    html! {
+        article .post #id {
+            form {
+                input type="text" value=(title);
+                textarea wrap="soft" { (body) }
+                button hx-post={ "/post/"(id) } hx-swap="outerHTML" hx-target={ "closest article" } { "Submit" }
+            }
         }
     }
 }

@@ -1,5 +1,5 @@
+mod fragment;
 mod opts;
-mod page;
 mod rate_limit;
 mod routes;
 mod util;
@@ -10,10 +10,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use anyhow::Context;
-use astra::{Request, Response};
 use clap::Parser;
-use hyper::header;
 use hyper::http::HeaderValue;
+use hyper::{header, Method};
 use lettre::message::{Mailbox, MessageBuilder};
 use lettre::{Address, SmtpTransport, Transport};
 use matchit::Match;
@@ -21,7 +20,12 @@ use rate_limit::{conventional, pre};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-type Router = matchit::Router<for<'a> fn(&Service, &'a Request, &'a matchit::Params) -> Response>;
+type Router = matchit::Router<
+    &'static [(
+        Method,
+        for<'a> fn(&Service, &'a astra::Request, &'a matchit::Params) -> astra::Response,
+    )],
+>;
 
 #[derive(Default)]
 struct State {
@@ -41,11 +45,13 @@ impl Service {
     fn new() -> anyhow::Result<Self> {
         let router = {
             let mut router = Router::new();
-            router.insert("/", Self::home)?;
-            router.insert("/favicon.ico", Self::favicon_ico)?;
-            router.insert("/style.css", Self::style_css)?;
-            router.insert("/count", Self::count)?;
-            router.insert("/user/:id", Self::get_user)?;
+            router.insert("/", &[(Method::GET, Self::home)])?;
+            router.insert("/favicon.ico", &[(Method::GET, Self::favicon_ico)])?;
+            router.insert("/style.css", &[(Method::GET, Self::style_css)])?;
+            router.insert("/count", &[(Method::POST, Self::count)])?;
+            router.insert("/user/:id", &[(Method::GET, Self::get_user)])?;
+            router.insert("/post/:id", &[(Method::POST, Self::save_post)])?;
+            router.insert("/post/:id/edit", &[(Method::GET, Self::edit_post)])?;
             router
         };
 
@@ -60,14 +66,19 @@ impl Service {
         })
     }
 
-    fn route(&self, req: &Request) -> Response {
+    fn route(&self, req: &astra::Request) -> astra::Response {
         // Try to find the handler for the requested path
         match self.router.at(req.uri().path()) {
             // If a handler is found, insert the route parameters into the request
             // extensions, and call it
             Ok(Match { value, params }) => {
-                let params = params.clone();
-                (value)(self, req, &params)
+                if let Some((_method, f)) = value.iter().find(|(method, _)| req.method() == method)
+                {
+                    let params = params.clone();
+                    (f)(self, req, &params)
+                } else {
+                    self.not_found_404(req)
+                }
             }
             // Otherwise return a 404
             Err(_) => self.not_found_404(req),
@@ -135,7 +146,11 @@ impl<'a> RequestExt<'a> {
 }
 
 impl astra::Service for Service {
-    fn call(&self, req: hyper::Request<astra::Body>, info: astra::ConnectionInfo) -> Response {
+    fn call(
+        &self,
+        req: hyper::Request<astra::Body>,
+        info: astra::ConnectionInfo,
+    ) -> astra::Response {
         let (resp, peer_addr) = self.handle_rate_limiting(&req, &info, |req| {
             self.handle_session(req, |req| self.route(req))
         });
@@ -153,7 +168,7 @@ impl astra::Service for Service {
 }
 
 fn main() -> anyhow::Result<()> {
-    init_logging();
+    init_logging()?;
 
     if let Ok(path) = dotenv::dotenv() {
         info!(path = %path.display(), "Loaded env file");
@@ -161,19 +176,21 @@ fn main() -> anyhow::Result<()> {
 
     let args = opts::Opts::parse();
 
-    send_email()?;
+    // send_email()?;
 
     let service = Service::new()?;
 
     let server = astra::Server::bind(args.listen);
 
     info!("Listening on {}", server.local_addr()?);
-    server.serve(service).context("bind http server")?;
+    server
+        .serve(service)
+        .context("Failed to start http server")?;
 
     Ok(())
 }
 
-fn init_logging() {
+fn init_logging() -> anyhow::Result<()> {
     let subscriber = tracing_subscriber::fmt()
         .with_writer(std::io::stderr) // Print to stderr
         .with_env_filter(
@@ -181,7 +198,10 @@ fn init_logging() {
         )
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
+    tracing::subscriber::set_global_default(subscriber)
+        .context("Failed to set tracing subscriber")?;
+
+    Ok(())
 }
 
 fn send_email() -> anyhow::Result<()> {

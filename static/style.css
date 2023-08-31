@@ -98,7 +98,7 @@ nav {
   font-weight: bold;
 }
 
-section.content {
+main.content {
   flex: 1 0 auto;
 }
 
@@ -107,9 +107,6 @@ section.content {
   width: 100%;
   margin: auto;
   padding-inline: clamp(0em, 15vw - 1em, 1em);
-}
-
-section, header, footer {
 }
 
 footer {
@@ -174,4 +171,24 @@ button:hover {
 
 .img-column img {
   height: 2em;
+}
+
+.post form textarea {
+  resize: vertical;
+  height: 50vh;
+}
+
+.post form input[type="text"],
+.post form textarea {
+  width: 100%;
+  transition: border 0.3s;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0.2em;
+  margin-block: 0.5em;
+}
+.post form input[type="text"]:focus,
+.post form textarea:focus {
+  border-color: #007BFF;
+  outline: none;
 }
