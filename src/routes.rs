@@ -5,9 +5,9 @@ use hyper::Method;
 use maud::html;
 
 use crate::page::{self, ResponseBuilderExt};
-use crate::Server;
+use crate::Service;
 
-impl Server {
+impl Service {
     pub fn count(&self, req: &Request, _: &matchit::Params) -> Response {
         let count = if req.method() == Method::POST {
             self.state.count.fetch_add(1, Ordering::Relaxed) + 1

@@ -2,15 +2,18 @@ mod opts;
 mod page;
 mod rate_limit;
 mod routes;
+mod util;
 
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::net::{self, Ipv4Addr};
 use std::str::FromStr;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use anyhow::Context;
-use astra::{Request, Response, Service};
+use astra::{Request, Response};
 use clap::Parser;
+use hyper::header;
+use hyper::http::HeaderValue;
 use lettre::message::{Mailbox, MessageBuilder};
 use lettre::{Address, SmtpTransport, Transport};
 use matchit::Match;
@@ -18,7 +21,7 @@ use rate_limit::{conventional, pre};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-type Router = matchit::Router<for<'a> fn(&Server, &'a Request, &'a matchit::Params) -> Response>;
+type Router = matchit::Router<for<'a> fn(&Service, &'a Request, &'a matchit::Params) -> Response>;
 
 #[derive(Default)]
 struct State {
@@ -26,7 +29,7 @@ struct State {
 }
 
 #[derive(Clone)]
-pub struct Server {
+pub struct Service {
     state: Arc<State>,
     db: Arc<redb::Database>,
     router: Router,
@@ -34,7 +37,7 @@ pub struct Server {
     rate_limiter: conventional::RateLimiter,
 }
 
-impl Server {
+impl Service {
     fn new() -> anyhow::Result<Self> {
         let router = {
             let mut router = Router::new();
@@ -70,28 +73,79 @@ impl Server {
             Err(_) => self.not_found_404(req),
         }
     }
+
+    fn handle_session(
+        &self,
+        req: &astra::Request,
+        f: impl FnOnce(&astra::Request) -> astra::Response,
+    ) -> astra::Response {
+        let mut session = None;
+        for (k, v) in RequestExt(req).iter_cookies() {
+            if k == "session" {
+                session = Some(v.to_owned());
+            }
+        }
+        let mut resp = f(req);
+
+        if session.is_none() {
+            resp.headers_mut().insert(
+                header::SET_COOKIE,
+                HeaderValue::from_str("session=booo").expect("can't fail"),
+            );
+        }
+
+        resp
+    }
+
+    fn handle_rate_limiting(
+        &self,
+        req: &astra::Request,
+        info: &astra::ConnectionInfo,
+        f: impl FnOnce(&astra::Request) -> astra::Response,
+    ) -> (astra::Response, Option<net::SocketAddr>) {
+        let peer_addr = info.peer_addr();
+        let peer_ip = peer_addr
+            .map(|s| s.ip())
+            .unwrap_or(net::IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+
+        (
+            if self.pre_rate_limiter.rate_limit(peer_ip) && self.rate_limiter.rate_limit(peer_ip) {
+                self.too_many_requests_429(req)
+            } else {
+                f(req)
+            },
+            peer_addr,
+        )
+    }
 }
 
-impl Service for Server {
-    fn call(&self, req: Request, info: astra::ConnectionInfo) -> Response {
-        let peer_addr = info.peer_addr();
-        let peer_addr = peer_addr.unwrap_or(std::net::SocketAddr::V4(SocketAddrV4::new(
-            Ipv4Addr::UNSPECIFIED,
-            0,
-        )));
-        let peer_ip = peer_addr.ip();
-        let resp =
-            if self.pre_rate_limiter.rate_limit(peer_ip) && self.rate_limiter.rate_limit(peer_ip) {
-                self.too_many_requests_429(&req)
-            } else {
-                self.route(&req)
-            };
+pub struct RequestExt<'a>(&'a hyper::Request<astra::Body>);
 
+impl<'a> RequestExt<'a> {
+    fn iter_cookies(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.0
+            .headers()
+            .get_all(header::COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .flat_map(|v| v.split(';'))
+            .map(|s| s.trim())
+            .flat_map(|s| s.split_once('='))
+    }
+}
+
+impl astra::Service for Service {
+    fn call(&self, req: hyper::Request<astra::Body>, info: astra::ConnectionInfo) -> Response {
+        let (resp, peer_addr) = self.handle_rate_limiting(&req, &info, |req| {
+            self.handle_session(req, |req| self.route(req))
+        });
+
+        use crate::util::DisplayOption;
         info!(
             status = %resp.status(),
             method = %req.method(),
             path = %req.uri(),
-            peer = %peer_addr,
+            peer = %DisplayOption(peer_addr),
             "request"
         );
         resp
@@ -107,13 +161,14 @@ fn main() -> anyhow::Result<()> {
 
     let args = opts::Opts::parse();
 
-    // send_email()?;
+    send_email()?;
 
-    let server = Server::new()?;
+    let service = Service::new()?;
 
-    astra::Server::bind(args.listen)
-        .serve(server)
-        .context("bind http server")?;
+    let server = astra::Server::bind(args.listen);
+
+    info!("Listening on {}", server.local_addr()?);
+    server.serve(service).context("bind http server")?;
 
     Ok(())
 }
@@ -130,24 +185,18 @@ fn init_logging() {
 }
 
 fn send_email() -> anyhow::Result<()> {
-    // Create the email
-    let email = MessageBuilder::new()
-        .to(Mailbox::new(
-            Some("dpc@dpc.pw".into()),
-            Address::from_str("dpc@dpc.pw")?,
-        ))
-        .from(Mailbox::new(
-            Some("dpc".into()),
-            Address::from_str("dciezarkiewicz@gmail.com")?,
-        ))
-        .subject("Test Email")
-        .body("Hello from Rust!".to_owned())?;
-
-    // Set up the SMTP client
     let smtp_hostname = std::env::var("SMTP_HOSTNAME")?;
     let smtp_port = std::env::var("SMTP_PORT")?;
     let smtp_username = std::env::var("SMTP_USER")?;
     let smtp_password = std::env::var("SMTP_PASSWORD")?;
+    let smtp_to = std::env::var("SMTP_TO")?;
+    let smtp_from = std::env::var("SMTP_FROM")?;
+
+    let email = MessageBuilder::new()
+        .to(Mailbox::new(None, Address::from_str(&smtp_to)?))
+        .from(Mailbox::new(None, Address::from_str(&smtp_from)?))
+        .subject("Test Email")
+        .body("Hello from Rust!".to_owned())?;
 
     let mailer = SmtpTransport::relay(&smtp_hostname)?
         .port(FromStr::from_str(&smtp_port).context("Failed to parse port number")?)
